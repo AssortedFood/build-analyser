@@ -93,9 +93,6 @@ stage_image() {
     if [[ -f "$CLAUDE_MD" ]]; then
         cp "$CLAUDE_MD" "$STAGING_DIR/CLAUDE.md"
         ok "Using CLAUDE.md from: $CLAUDE_MD"
-    elif [[ -f "$REPO_DIR/CLAUDE.md" ]]; then
-        cp "$REPO_DIR/CLAUDE.md" "$STAGING_DIR/CLAUDE.md"
-        warn "No external CLAUDE.md found, using one from the repo"
     fi
 
     # Copy artifacts to staging
