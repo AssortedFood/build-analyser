@@ -34,7 +34,7 @@ CLAUDE_MD="./CLAUDE-to_copy.md"
 BUILD_DIR=""
 BUILD_CMD="npm run build"
 NODE_VERSION="20"
-WORKDIR="/workspace"
+WORKDIR="/home/claude/repo_build_files"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -177,6 +177,9 @@ COPY --chown=claude:claude build-output/ ${WORKDIR}/build/
 COPY --chown=claude:claude CLAUDE.md ${WORKDIR}/CLAUDE.md
 $(if [[ -f "$STAGING_DIR/package.json" ]]; then echo "COPY --chown=claude:claude package.json ${WORKDIR}/package.json"; fi)
 
+# ── Empty src directory for new work ────────────────────────────────────────
+RUN mkdir -p ${WORKDIR}/src && chown claude:claude ${WORKDIR}/src
+
 # ── Environment ──────────────────────────────────────────────────────────────
 ENV LANG=C.UTF-8
 ENV TERM=xterm-256color
@@ -208,5 +211,5 @@ echo -e "  ${CYAN}# With permission skip (use with caution):${NC}"
 echo -e "  docker run -it --rm -e ANTHROPIC_API_KEY=\$ANTHROPIC_API_KEY $IMAGE_TAG claude --dangerously-skip-permissions"
 echo ""
 echo -e "  ${CYAN}# Mount a volume for persistent work:${NC}"
-echo -e "  docker run -it --rm -e ANTHROPIC_API_KEY=\$ANTHROPIC_API_KEY -v \$(pwd)/output:/workspace/output $IMAGE_TAG"
+echo -e "  docker run -it --rm -e ANTHROPIC_API_KEY=\$ANTHROPIC_API_KEY -v \$(pwd)/output:/home/claude/repo_build_files/output $IMAGE_TAG"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

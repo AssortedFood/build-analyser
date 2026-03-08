@@ -34,7 +34,7 @@ docker run -it --rm -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY ba-myrepo claude --d
 # Mount a volume to extract outputs
 docker run -it --rm \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -v $(pwd)/output:/workspace/output \
+  -v $(pwd)/output:/home/claude/repo_build_files/output \
   ba-myrepo
 ```
 
