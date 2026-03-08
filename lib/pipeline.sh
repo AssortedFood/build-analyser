@@ -129,7 +129,7 @@ stage_review() {
 
 stage_followup() {
     ensure_container
-    run_step worker "Executing follow-up"    session-id "$WORKER_SESSION"   "06-worker-followup.md"
+    run_step worker "Executing follow-up"    resume     "$WORKER_SESSION"   "06-worker-followup.md"
 }
 
 stage_report() {

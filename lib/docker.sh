@@ -20,16 +20,28 @@ build_docker_image() {
 }
 
 # setup_container
-# Uses globals: REPO_NAME, IMAGE_TAG, OUTPUT_DIR, DOCS_DIR, STAGING_DIR, WORKDIR, CLAUDE_MODEL
+# Uses globals: REPO_NAME, IMAGE_TAG, OUTPUT_DIR, DOCS_DIR, STAGING_DIR, WORKDIR, CLAUDE_MODEL, REPO_OUTPUT_DIR
 # Sets: CONTAINER_NAME, CLAUDE, PLANNER_SESSION, WORKER_SESSION, REPORTER_SESSION
 CONTAINER_RUNNING=false
 setup_container() {
     CONTAINER_NAME="build-analysis-run-${REPO_NAME,,}"
     CLAUDE="claude --dangerously-skip-permissions --model $CLAUDE_MODEL"
 
-    PLANNER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
-    WORKER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
-    REPORTER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+    local sessions_file="$REPO_OUTPUT_DIR/.sessions"
+    if [[ -f "$sessions_file" ]]; then
+        source "$sessions_file"
+        log "Restored agent sessions"
+    else
+        PLANNER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+        WORKER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+        REPORTER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+        cat > "$sessions_file" <<EOF
+PLANNER_SESSION=$PLANNER_SESSION
+WORKER_SESSION=$WORKER_SESSION
+REPORTER_SESSION=$REPORTER_SESSION
+EOF
+        ok "Created agent sessions"
+    fi
 
     log "Starting container: $CONTAINER_NAME ..."
     docker run -d --name "$CONTAINER_NAME" \
