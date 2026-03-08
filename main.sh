@@ -73,7 +73,9 @@ fi
 mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
 
 # ── Staging dir for docker context ──────────────────────────────────────────
-STAGING_DIR=$(mktemp -d "$SCRIPT_DIR/.staging.XXXXXX")
+STAGING_DIR="$SCRIPT_DIR/.staging-${REPO_NAME,,}"
+rm -rf "$STAGING_DIR"
+mkdir -p "$STAGING_DIR"
 trap 'rm -rf "$STAGING_DIR"' EXIT
 
 # ── Run ─────────────────────────────────────────────────────────────────────
