@@ -27,10 +27,13 @@ warn() { echo -e "${YELLOW}[ warn ]${NC} $*"; }
 err()  { echo -e "${RED}[error ]${NC} $*" >&2; }
 die()  { err "$@"; exit 1; }
 
+# ── Resolve script directory ──────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # ── Defaults ──────────────────────────────────────────────────────────────────
 REPO_URL=""
 IMAGE_TAG=""  # set after repo name is derived
-CLAUDE_MD="./CLAUDE-to_copy.md"
+CLAUDE_MD="$SCRIPT_DIR/prompts/CLAUDE.md"
 BUILD_DIR=""
 BUILD_CMD="npm run build"
 NODE_VERSION="20"
@@ -57,14 +60,14 @@ done
 
 # ── Derive repo name and image tag ────────────────────────────────────────────
 REPO_NAME=$(basename "$REPO_URL" .git)
-IMAGE_TAG="ba-${REPO_NAME,,}"
+IMAGE_TAG="build-analysis-${REPO_NAME,,}"
 
 log "Repo:  $REPO_URL"
 log "Tag:   $IMAGE_TAG"
 
 # ── Set up staging area ──────────────────────────────────────────────────────
-STAGING_DIR=$(mktemp -d)
-trap 'rm -rf "$STAGING_DIR"' EXIT
+STAGING_DIR=$(mktemp -d "${HOME}/.build-analysis-staging.XXXXXX")
+trap 'rm -rf "$STAGING_DIR"' EXIT  # updated later to also clean up container
 
 log "Staging directory: $STAGING_DIR"
 
@@ -136,6 +139,9 @@ cp -r "$STAGING_DIR/repo/$BUILD_DIR" "$STAGING_DIR/build-output"
 # Also grab package.json if it exists (useful context)
 [[ -f "$STAGING_DIR/repo/package.json" ]] && cp "$STAGING_DIR/repo/package.json" "$STAGING_DIR/package.json"
 
+# ── Copy prompt files to staging ─────────────────────────────────────────────
+cp -r "$SCRIPT_DIR/prompts" "$STAGING_DIR/prompts"
+
 # ── Generate Dockerfile ──────────────────────────────────────────────────────
 cat > "$STAGING_DIR/Dockerfile" <<DOCKERFILE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,8 +183,11 @@ COPY --chown=claude:claude build-output/ ${WORKDIR}/build/
 COPY --chown=claude:claude CLAUDE.md ${WORKDIR}/CLAUDE.md
 $(if [[ -f "$STAGING_DIR/package.json" ]]; then echo "COPY --chown=claude:claude package.json ${WORKDIR}/package.json"; fi)
 
-# ── Empty src directory for new work ────────────────────────────────────────
-RUN mkdir -p ${WORKDIR}/src && chown claude:claude ${WORKDIR}/src
+# ── Empty src and docs directories ─────────────────────────────────────────
+RUN mkdir -p ${WORKDIR}/src ${WORKDIR}/docs && chown claude:claude ${WORKDIR}/src ${WORKDIR}/docs
+
+# ── Prompt files ───────────────────────────────────────────────────────────
+COPY --chown=claude:claude prompts/ ${WORKDIR}/prompts/
 
 # ── Environment ──────────────────────────────────────────────────────────────
 ENV LANG=C.UTF-8
@@ -198,5 +207,86 @@ docker build -t "$IMAGE_TAG" "$STAGING_DIR"
 ok "Image built: $IMAGE_TAG"
 
 echo ""
-log "Launching container ..."
-exec docker run -it --rm "$IMAGE_TAG"
+REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
+OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
+DOCS_DIR="$REPO_OUTPUT_DIR/docs"
+mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
+log "Output: $REPO_OUTPUT_DIR"
+
+CONTAINER_NAME="build-analysis-run-${REPO_NAME,,}"
+CLAUDE="claude --dangerously-skip-permissions"
+
+# Session IDs for each agent so we can resume specific conversations
+PLANNER_SESSION="planner-$(uuidgen)"
+WORKER_SESSION="worker-$(uuidgen)"
+REPORTER_SESSION="reporter-$(uuidgen)"
+
+# ── Start persistent container ──────────────────────────────────────────────
+log "Starting container: $CONTAINER_NAME ..."
+docker run -d --name "$CONTAINER_NAME" \
+    -v "$OUTPUT_DIR:/home/claude/repo_build_files/src" \
+    -v "$DOCS_DIR:/home/claude/repo_build_files/docs" \
+    -v "$HOME/.claude:/home/claude/.claude" \
+    -v "$HOME/.claude.json:/home/claude/.claude.json" \
+    "$IMAGE_TAG" sleep infinity
+trap 'docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1; rm -rf "$STAGING_DIR"' EXIT
+ok "Container running"
+
+run_claude() {
+    docker exec -it "$CONTAINER_NAME" $CLAUDE "$@"
+}
+
+run_bash() {
+    docker exec -it "$CONTAINER_NAME" bash -c "$*"
+}
+
+# ── Step 1: Planner — create plan ────────────────────────────────────────────
+log "Step 1/9: Planner — creating plan ..."
+run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/01-plan.md")"
+ok "Plan created"
+
+# ── Step 2: Planner — sense-check plan ───────────────────────────────────────
+log "Step 2/9: Planner — reviewing plan ..."
+run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/02-plan-review.md")"
+ok "Plan reviewed"
+
+# ── Step 3: Worker — execute plan ────────────────────────────────────────────
+log "Step 3/9: Worker — executing plan ..."
+run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/03-worker-execute.md")"
+ok "Worker finished"
+
+# ── Step 4: Planner — review work ────────────────────────────────────────────
+log "Step 4/9: Planner — reviewing work ..."
+run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/04-review-work.md")"
+ok "Work reviewed"
+
+# ── Step 5: Planner — follow-up plan ────────────────────────────────────────
+log "Step 5/9: Planner — creating follow-up plan ..."
+run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/05-followup-plan.md")"
+ok "Follow-up plan created"
+
+# ── Step 6: Worker — execute follow-up ──────────────────────────────────────
+log "Step 6/9: Worker — executing follow-up ..."
+run_claude --resume "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
+ok "Worker follow-up finished"
+
+# ── Step 7: Clone original source for comparison ────────────────────────────
+log "Step 7/9: Cloning original source for comparison ..."
+run_bash "git clone --depth 1 $REPO_URL original_src/"
+ok "Original source cloned"
+
+# ── Step 8: Reporter — mapping ──────────────────────────────────────────────
+log "Step 8/9: Reporter — producing mapping ..."
+run_claude --session-id "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/07-reporter-mapping.md")"
+ok "Mapping complete"
+
+# ── Step 9: Reporter — report ───────────────────────────────────────────────
+log "Step 9/9: Reporter — producing report ..."
+run_claude --resume "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/08-reporter-report.md")"
+ok "Report complete"
+
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Pipeline complete!${NC}"
+echo -e "${GREEN}  Output: $REPO_OUTPUT_DIR${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

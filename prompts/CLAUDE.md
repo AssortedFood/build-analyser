@@ -7,6 +7,7 @@ Your working directory is `~/repo_build_files/`.
 
 - `build/` — the project's compiled build output
 - `src/` — empty directory for reconstructed source
+- `docs/` — directory for plans, reports, and other documentation
 
 ## Tools
 
