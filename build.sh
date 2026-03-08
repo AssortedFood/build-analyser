@@ -12,7 +12,7 @@ set -euo pipefail
 #   4. Builds the Docker image
 #
 # Usage:
-#   ./build.sh <github-repo-url>
+#   ./build.sh <github-repo-url> [--fresh]
 # ─────────────────────────────────────────────────────────────────────────────
 
 RED='\033[0;31m'
@@ -38,6 +38,7 @@ BUILD_DIR=""
 BUILD_CMD="npm run build"
 NODE_VERSION="20"
 WORKDIR="/home/claude/repo_build_files"
+FRESH=false
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -46,6 +47,8 @@ while [[ $# -gt 0 ]]; do
             sed -n '/^# Usage:/,/^# ─/p' "$0" | head -n -1 | sed 's/^# //'
             exit 0
             ;;
+        --fresh)
+            FRESH=true; shift ;;
         -*)
             die "Unknown option: $1"
             ;;
@@ -210,6 +213,10 @@ echo ""
 REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
 OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
 DOCS_DIR="$REPO_OUTPUT_DIR/docs"
+if [[ "$FRESH" == true ]] && [[ -d "$REPO_OUTPUT_DIR" ]]; then
+    warn "Removing previous output: $REPO_OUTPUT_DIR"
+    rm -rf "$REPO_OUTPUT_DIR"
+fi
 mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
 log "Output: $REPO_OUTPUT_DIR"
 
@@ -249,51 +256,83 @@ planner() { echo -e "${CYAN}[planner]${NC} $*"; }
 worker()  { echo -e "${CYAN}[worker ]${NC} $*"; }
 reporter(){ echo -e "${CYAN}[reporter]${NC} $*"; }
 
-# ── Step 1: Planner — create plan ────────────────────────────────────────────
-planner "Step 1/9: Creating plan ..."
-run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/01-plan.md")"
-ok "Plan created"
+# ── Stage detection ─────────────────────────────────────────────────────────
+STAGE_FILE="$DOCS_DIR/.stage"
+CURRENT_STAGE="start"
+if [[ -f "$STAGE_FILE" ]]; then
+    CURRENT_STAGE=$(cat "$STAGE_FILE")
+    if [[ "$CURRENT_STAGE" == "complete" ]]; then
+        ok "Pipeline already complete. Delete $STAGE_FILE to re-run."
+        exit 0
+    fi
+    log "Resuming from stage: $CURRENT_STAGE"
+fi
 
-# ── Step 2: Planner — sense-check plan ───────────────────────────────────────
-planner "Step 2/9: Reviewing plan ..."
-run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/02-plan-review.md")"
-ok "Plan reviewed"
+# ── Stage: plan (steps 1+2) ─────────────────────────────────────────────────
+if [[ "$CURRENT_STAGE" == "start" ]]; then
+    planner "Step 1/9: Creating plan ..."
+    run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/01-plan.md")"
+    ok "Plan created"
 
-# ── Step 3: Worker — execute plan ────────────────────────────────────────────
-worker "Step 3/9: Executing plan ..."
-run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/03-worker-execute.md")"
-ok "Worker finished"
+    planner "Step 2/9: Reviewing plan ..."
+    run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/02-plan-review.md")"
+    ok "Plan reviewed"
 
-# ── Step 4: Planner — review work ────────────────────────────────────────────
-planner "Step 4/9: Reviewing work ..."
-run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/04-review-work.md")"
-ok "Work reviewed"
+    echo "planned" > "$STAGE_FILE"
+    CURRENT_STAGE="planned"
+fi
 
-# ── Step 5: Planner — follow-up plan ────────────────────────────────────────
-planner "Step 5/9: Creating follow-up plan ..."
-run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/05-followup-plan.md")"
-ok "Follow-up plan created"
+# ── Stage: work (step 3) ────────────────────────────────────────────────────
+if [[ "$CURRENT_STAGE" == "planned" ]]; then
+    worker "Step 3/9: Executing plan ..."
+    run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/03-worker-execute.md")"
+    ok "Worker finished"
 
-# ── Step 6: Worker — execute follow-up ──────────────────────────────────────
-worker "Step 6/9: Executing follow-up ..."
-run_claude --resume "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
-ok "Worker follow-up finished"
+    echo "worked" > "$STAGE_FILE"
+    CURRENT_STAGE="worked"
+fi
 
-# ── Step 7: Copy original source for comparison ─────────────────────────────
-log "Step 7/9: Copying original source into container ..."
-docker cp "$STAGING_DIR/repo" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
-docker exec "$CONTAINER_NAME" chown -R claude:claude /home/claude/repo_build_files/original_src
-ok "Original source copied"
+# ── Stage: review (steps 4+5) ───────────────────────────────────────────────
+if [[ "$CURRENT_STAGE" == "worked" ]]; then
+    planner "Step 4/9: Reviewing work ..."
+    run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/04-review-work.md")"
+    ok "Work reviewed"
 
-# ── Step 8: Reporter — mapping ──────────────────────────────────────────────
-reporter "Step 8/9: Producing mapping ..."
-run_claude --session-id "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/07-reporter-mapping.md")"
-ok "Mapping complete"
+    planner "Step 5/9: Creating follow-up plan ..."
+    run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/05-followup-plan.md")"
+    ok "Follow-up plan created"
 
-# ── Step 9: Reporter — report ───────────────────────────────────────────────
-reporter "Step 9/9: Producing report ..."
-run_claude --resume "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/08-reporter-report.md")"
-ok "Report complete"
+    echo "reviewed" > "$STAGE_FILE"
+    CURRENT_STAGE="reviewed"
+fi
+
+# ── Stage: followup (step 6) ────────────────────────────────────────────────
+if [[ "$CURRENT_STAGE" == "reviewed" ]]; then
+    worker "Step 6/9: Executing follow-up ..."
+    run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
+    ok "Worker follow-up finished"
+
+    echo "followed_up" > "$STAGE_FILE"
+    CURRENT_STAGE="followed_up"
+fi
+
+# ── Stage: report (steps 7+8+9) ─────────────────────────────────────────────
+if [[ "$CURRENT_STAGE" == "followed_up" ]]; then
+    log "Step 7/9: Copying original source into container ..."
+    docker cp "$STAGING_DIR/repo" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
+    docker exec "$CONTAINER_NAME" chown -R claude:claude /home/claude/repo_build_files/original_src
+    ok "Original source copied"
+
+    reporter "Step 8/9: Producing mapping ..."
+    run_claude --session-id "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/07-reporter-mapping.md")"
+    ok "Mapping complete"
+
+    reporter "Step 9/9: Producing report ..."
+    run_claude --resume "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/08-reporter-report.md")"
+    ok "Report complete"
+
+    echo "complete" > "$STAGE_FILE"
+fi
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

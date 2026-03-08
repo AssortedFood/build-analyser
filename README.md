@@ -21,15 +21,29 @@ Clones a GitHub repo, builds it, and runs a multi-agent Claude Code pipeline tha
 | 4 | Planner | Reviews worker's output, scores it /10 |
 | 5 | Planner | Produces `docs/FOLLOWUP.md` for remaining work |
 | 6 | Worker | Executes the follow-up plan |
-| 7 | *script* | Clones original repo into `original_src/` |
+| 7 | *script* | Copies original repo into container as `original_src/` |
 | 8 | Reporter | Compares `src/` vs `original_src/`, writes `docs/MAPPING.md` |
 | 9 | Reporter | Writes `docs/REPORT.md` with improvement recommendations |
+
+All agents run on **Opus 4.6** with **high thinking effort**.
 
 ## Quick start
 
 ```bash
 chmod +x build.sh
 ./build.sh https://github.com/user/repo
+```
+
+## Resuming
+
+The pipeline tracks progress via a stage file (`output/<repo>/docs/.stage`). If a run fails or is interrupted, re-run the same command and it picks up where it left off:
+
+```bash
+# Resumes automatically from the last completed stage
+./build.sh https://github.com/user/repo
+
+# Start fresh (deletes previous output)
+./build.sh https://github.com/user/repo --fresh
 ```
 
 ## Output
