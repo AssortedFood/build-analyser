@@ -279,10 +279,11 @@ worker "Step 6/9: Executing follow-up ..."
 run_claude --resume "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
 ok "Worker follow-up finished"
 
-# ── Step 7: Clone original source for comparison ────────────────────────────
-log "Step 7/9: Cloning original source for comparison ..."
-run_bash "git clone --depth 1 $REPO_URL original_src/"
-ok "Original source cloned"
+# ── Step 7: Copy original source for comparison ─────────────────────────────
+log "Step 7/9: Copying original source into container ..."
+docker cp "$STAGING_DIR/repo" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
+docker exec "$CONTAINER_NAME" chown -R claude:claude /home/claude/repo_build_files/original_src
+ok "Original source copied"
 
 # ── Step 8: Reporter — mapping ──────────────────────────────────────────────
 reporter "Step 8/9: Producing mapping ..."
