@@ -6,7 +6,7 @@ Clones a GitHub repo, builds it, and runs a multi-agent Claude Code pipeline tha
 
 1. Clones a GitHub repo (shallow)
 2. Detects package manager (npm/pnpm/yarn/bun) and installs dependencies
-3. Runs `npm run build`
+3. Detects and runs the project's build command
 4. Auto-detects the build output directory (`dist`, `build`, `out`, `.next`, etc.)
 5. Builds a Docker image with the build output, Claude Code CLI, and prompt files
 6. Runs a 9-step agent pipeline inside the container
@@ -30,8 +30,8 @@ All agents run on **Opus 4.6** with **high thinking effort**.
 ## Quick start
 
 ```bash
-chmod +x build.sh
-./build.sh https://github.com/user/repo
+chmod +x main.sh
+./main.sh https://github.com/user/repo
 ```
 
 ## Resuming
@@ -40,10 +40,10 @@ The pipeline tracks progress via a stage file (`output/<repo>/docs/.stage`). If 
 
 ```bash
 # Resumes automatically from the last completed stage
-./build.sh https://github.com/user/repo
+./main.sh https://github.com/user/repo
 
 # Start fresh (deletes previous output)
-./build.sh https://github.com/user/repo --fresh
+./main.sh https://github.com/user/repo --fresh
 ```
 
 ## Output
@@ -56,9 +56,17 @@ output/my-app/
 └── docs/   — PLAN.md, FOLLOWUP.md, MAPPING.md, REPORT.md
 ```
 
-## Prompts
+## Project structure
 
-All agent prompts live in `prompts/` as separate markdown files. Edit them to change agent behaviour.
+```
+main.sh            Entry point + orchestration
+lib/
+├── logging.sh     Colors, log functions, agent helpers, banner
+├── detect.sh      Package manager, build command, and output directory detection
+├── docker.sh      Dockerfile generation, image build, container lifecycle
+└── pipeline.sh    Stage management and pipeline execution
+prompts/           Agent prompts (one per step)
+```
 
 ## What's in the image
 
