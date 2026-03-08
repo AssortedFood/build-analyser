@@ -9,7 +9,7 @@ Clones a GitHub repo, builds it, and runs a multi-agent Claude Code pipeline tha
 3. Detects and runs the project's build command
 4. Auto-detects the build output directory (`dist`, `build`, `out`, `.next`, etc.)
 5. Builds a Docker image with the build output, Claude Code CLI, and prompt files
-6. Runs a 9-step agent pipeline inside the container
+6. Runs a multi-agent analysis pipeline inside the container
 
 ## Pipeline
 
@@ -25,7 +25,7 @@ Clones a GitHub repo, builds it, and runs a multi-agent Claude Code pipeline tha
 | 8 | Reporter | Compares `src/` vs `original_src/`, writes `docs/MAPPING.md` |
 | 9 | Reporter | Writes `docs/REPORT.md` with improvement recommendations |
 
-All agents run on **Opus 4.6** with **high thinking effort**.
+Agents run with **high thinking effort**. Model is configurable via `CLAUDE_MODEL` in `main.sh` (default: `opus`).
 
 ## Quick start
 
@@ -59,13 +59,14 @@ output/my-app/
 ## Project structure
 
 ```
-main.sh            Entry point + orchestration
+main.sh              Entry point + orchestration
+sandbox.Dockerfile   Docker image definition (Debian + Node + Claude Code)
 lib/
-├── logging.sh     Colors, log functions, agent helpers, banner
-├── detect.sh      Package manager, build command, and output directory detection
-├── docker.sh      Dockerfile generation, image build, container lifecycle
-└── pipeline.sh    Stage management and pipeline execution
-prompts/           Agent prompts (one per step)
+├── logging.sh       Logging via gum, agent helpers, banner
+├── detect.sh        Package manager, build command, and output directory detection
+├── docker.sh        Image build, container lifecycle, run_claude helper
+└── pipeline.sh      Modular stage definitions and pipeline runner
+prompts/             Agent prompts (one per step)
 ```
 
 ## What's in the image
