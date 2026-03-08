@@ -20,8 +20,9 @@ build_docker_image() {
 }
 
 # setup_container
-# Uses globals: REPO_NAME, IMAGE_TAG, OUTPUT_DIR, DOCS_DIR, STAGING_DIR
+# Uses globals: REPO_NAME, IMAGE_TAG, OUTPUT_DIR, DOCS_DIR, STAGING_DIR, WORKDIR, CLAUDE_MODEL
 # Sets: CONTAINER_NAME, CLAUDE, PLANNER_SESSION, WORKER_SESSION, REPORTER_SESSION
+CONTAINER_RUNNING=false
 setup_container() {
     CONTAINER_NAME="build-analysis-run-${REPO_NAME,,}"
     CLAUDE="claude --dangerously-skip-permissions --model $CLAUDE_MODEL"
@@ -39,7 +40,14 @@ setup_container() {
         -v "$HOME/.claude.json:/home/claude/.claude.json" \
         "$IMAGE_TAG" sleep infinity
     trap 'docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1; rm -rf "$STAGING_DIR"' EXIT
+    CONTAINER_RUNNING=true
     ok "Container running"
+}
+
+# ensure_container — lazily starts the container on first agent stage
+ensure_container() {
+    [[ "$CONTAINER_RUNNING" == true ]] && return
+    setup_container
 }
 
 # run_claude <args...>
