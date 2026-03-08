@@ -214,16 +214,17 @@ mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
 log "Output: $REPO_OUTPUT_DIR"
 
 CONTAINER_NAME="build-analysis-run-${REPO_NAME,,}"
-CLAUDE="claude --dangerously-skip-permissions"
+CLAUDE="claude --dangerously-skip-permissions --model opus"
 
 # Session IDs for each agent so we can resume specific conversations
-PLANNER_SESSION="planner-$(uuidgen)"
-WORKER_SESSION="worker-$(uuidgen)"
-REPORTER_SESSION="reporter-$(uuidgen)"
+PLANNER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+WORKER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
+REPORTER_SESSION="$(cat /proc/sys/kernel/random/uuid)"
 
 # ── Start persistent container ──────────────────────────────────────────────
 log "Starting container: $CONTAINER_NAME ..."
 docker run -d --name "$CONTAINER_NAME" \
+    -e CLAUDE_CODE_EFFORT_LEVEL=high \
     -v "$OUTPUT_DIR:/home/claude/repo_build_files/src" \
     -v "$DOCS_DIR:/home/claude/repo_build_files/docs" \
     -v "$HOME/.claude:/home/claude/.claude" \
@@ -233,40 +234,48 @@ trap 'docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1; rm -rf "$STAGING_DIR"' EX
 ok "Container running"
 
 run_claude() {
-    docker exec -it "$CONTAINER_NAME" $CLAUDE "$@"
+    docker exec -t "$CONTAINER_NAME" $CLAUDE --verbose --output-format stream-json "$@" \
+        | grep --line-buffered '^\{' \
+        | jq --unbuffered -rj 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | "\n" + .text'
+    echo ""
 }
 
 run_bash() {
     docker exec -it "$CONTAINER_NAME" bash -c "$*"
 }
 
+# ── Agent log helpers ────────────────────────────────────────────────────────
+planner() { echo -e "${CYAN}[planner]${NC} $*"; }
+worker()  { echo -e "${CYAN}[worker ]${NC} $*"; }
+reporter(){ echo -e "${CYAN}[reporter]${NC} $*"; }
+
 # ── Step 1: Planner — create plan ────────────────────────────────────────────
-log "Step 1/9: Planner — creating plan ..."
+planner "Step 1/9: Creating plan ..."
 run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/01-plan.md")"
 ok "Plan created"
 
 # ── Step 2: Planner — sense-check plan ───────────────────────────────────────
-log "Step 2/9: Planner — reviewing plan ..."
+planner "Step 2/9: Reviewing plan ..."
 run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/02-plan-review.md")"
 ok "Plan reviewed"
 
 # ── Step 3: Worker — execute plan ────────────────────────────────────────────
-log "Step 3/9: Worker — executing plan ..."
+worker "Step 3/9: Executing plan ..."
 run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/03-worker-execute.md")"
 ok "Worker finished"
 
 # ── Step 4: Planner — review work ────────────────────────────────────────────
-log "Step 4/9: Planner — reviewing work ..."
+planner "Step 4/9: Reviewing work ..."
 run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/04-review-work.md")"
 ok "Work reviewed"
 
 # ── Step 5: Planner — follow-up plan ────────────────────────────────────────
-log "Step 5/9: Planner — creating follow-up plan ..."
+planner "Step 5/9: Creating follow-up plan ..."
 run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/05-followup-plan.md")"
 ok "Follow-up plan created"
 
 # ── Step 6: Worker — execute follow-up ──────────────────────────────────────
-log "Step 6/9: Worker — executing follow-up ..."
+worker "Step 6/9: Executing follow-up ..."
 run_claude --resume "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
 ok "Worker follow-up finished"
 
@@ -276,12 +285,12 @@ run_bash "git clone --depth 1 $REPO_URL original_src/"
 ok "Original source cloned"
 
 # ── Step 8: Reporter — mapping ──────────────────────────────────────────────
-log "Step 8/9: Reporter — producing mapping ..."
+reporter "Step 8/9: Producing mapping ..."
 run_claude --session-id "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/07-reporter-mapping.md")"
 ok "Mapping complete"
 
 # ── Step 9: Reporter — report ───────────────────────────────────────────────
-log "Step 9/9: Reporter — producing report ..."
+reporter "Step 9/9: Producing report ..."
 run_claude --resume "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/08-reporter-report.md")"
 ok "Report complete"
 
