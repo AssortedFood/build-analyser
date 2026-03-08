@@ -68,85 +68,102 @@ IMAGE_TAG="build-analysis-${REPO_NAME,,}"
 log "Repo:  $REPO_URL"
 log "Tag:   $IMAGE_TAG"
 
-# ── Set up staging area ──────────────────────────────────────────────────────
-STAGING_DIR=$(mktemp -d "${HOME}/.build-analysis-staging.XXXXXX")
-trap 'rm -rf "$STAGING_DIR"' EXIT  # updated later to also clean up container
+echo ""
+REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
+OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
+DOCS_DIR="$REPO_OUTPUT_DIR/docs"
 
-log "Staging directory: $STAGING_DIR"
+if [[ "$FRESH" == true ]] && [[ -d "$REPO_OUTPUT_DIR" ]]; then
+    warn "Removing previous output: $REPO_OUTPUT_DIR"
+    rm -rf "$REPO_OUTPUT_DIR"
+fi
+mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
 
-# ── Clone ─────────────────────────────────────────────────────────────────────
-log "Cloning $REPO_URL ..."
-git clone --depth 1 "$REPO_URL" "$STAGING_DIR/repo"
-ok "Cloned into $STAGING_DIR/repo"
-
-# ── Install + Build ──────────────────────────────────────────────────────────
-cd "$STAGING_DIR/repo"
-
-# Detect package manager
-if [[ -f "pnpm-lock.yaml" ]]; then
-    PM="pnpm"
-    PM_INSTALL="pnpm install --frozen-lockfile"
-elif [[ -f "yarn.lock" ]]; then
-    PM="yarn"
-    PM_INSTALL="yarn install --frozen-lockfile"
-elif [[ -f "bun.lockb" ]] || [[ -f "bun.lock" ]]; then
-    PM="bun"
-    PM_INSTALL="bun install"
-else
-    PM="npm"
-    PM_INSTALL="npm ci --ignore-scripts=false 2>/dev/null || npm install"
+# ── Check if we can skip the build ───────────────────────────────────────────
+STAGE_FILE="$DOCS_DIR/.stage"
+NEEDS_BUILD=true
+if [[ "$FRESH" != true ]] && [[ -f "$STAGE_FILE" ]] && docker image inspect "$IMAGE_TAG" > /dev/null 2>&1; then
+    log "Image exists and previous run found — skipping build"
+    NEEDS_BUILD=false
 fi
 
-log "Detected package manager: $PM"
-log "Running: $PM_INSTALL"
-eval "$PM_INSTALL"
-ok "Dependencies installed"
+STAGING_DIR=$(mktemp -d "$SCRIPT_DIR/.staging.XXXXXX")
+trap 'rm -rf "$STAGING_DIR"' EXIT  # updated later to also clean up container
 
-log "Running: $BUILD_CMD"
-eval "$BUILD_CMD"
-ok "Build complete"
+if [[ "$NEEDS_BUILD" == true ]]; then
+    # ── Clone ─────────────────────────────────────────────────────────────────
+    log "Cloning $REPO_URL ..."
+    git clone --depth 1 "$REPO_URL" "$STAGING_DIR/repo"
+    ok "Cloned into $STAGING_DIR/repo"
 
-cd - > /dev/null
+    # ── Install + Build ───────────────────────────────────────────────────────
+    cd "$STAGING_DIR/repo"
 
-# ── Auto-detect build output directory ────────────────────────────────────
-for candidate in dist build out .next output public/build; do
-    if [[ -d "$STAGING_DIR/repo/$candidate" ]]; then
-        BUILD_DIR="$candidate"
-        break
+    # Detect package manager
+    if [[ -f "pnpm-lock.yaml" ]]; then
+        PM="pnpm"
+        PM_INSTALL="pnpm install --frozen-lockfile"
+    elif [[ -f "yarn.lock" ]]; then
+        PM="yarn"
+        PM_INSTALL="yarn install --frozen-lockfile"
+    elif [[ -f "bun.lockb" ]] || [[ -f "bun.lock" ]]; then
+        PM="bun"
+        PM_INSTALL="bun install"
+    else
+        PM="npm"
+        PM_INSTALL="npm ci --ignore-scripts=false 2>/dev/null || npm install"
     fi
-done
-[[ -z "$BUILD_DIR" ]] && die "Could not auto-detect build directory."
 
-ok "Build output: $BUILD_DIR"
+    log "Detected package manager: $PM"
+    log "Running: $PM_INSTALL"
+    eval "$PM_INSTALL"
+    ok "Dependencies installed"
 
-# ── Resolve CLAUDE.md ─────────────────────────────────────────────────────────
-if [[ -f "$CLAUDE_MD" ]]; then
-    cp "$CLAUDE_MD" "$STAGING_DIR/CLAUDE.md"
-    ok "Using CLAUDE.md from: $CLAUDE_MD"
-elif [[ -f "$STAGING_DIR/repo/CLAUDE.md" ]]; then
-    cp "$STAGING_DIR/repo/CLAUDE.md" "$STAGING_DIR/CLAUDE.md"
-    warn "No external CLAUDE.md found, using one from the repo"
-else
-    warn "No CLAUDE.md found. Creating a minimal placeholder."
-    cat > "$STAGING_DIR/CLAUDE.md" <<'PLACEHOLDER'
+    log "Running: $BUILD_CMD"
+    eval "$BUILD_CMD"
+    ok "Build complete"
+
+    cd - > /dev/null
+
+    # ── Auto-detect build output directory ────────────────────────────────────
+    for candidate in dist build out .next output public/build; do
+        if [[ -d "$STAGING_DIR/repo/$candidate" ]]; then
+            BUILD_DIR="$candidate"
+            break
+        fi
+    done
+    [[ -z "$BUILD_DIR" ]] && die "Could not auto-detect build directory."
+
+    ok "Build output: $BUILD_DIR"
+
+    # ── Resolve CLAUDE.md ─────────────────────────────────────────────────────
+    if [[ -f "$CLAUDE_MD" ]]; then
+        cp "$CLAUDE_MD" "$STAGING_DIR/CLAUDE.md"
+        ok "Using CLAUDE.md from: $CLAUDE_MD"
+    elif [[ -f "$STAGING_DIR/repo/CLAUDE.md" ]]; then
+        cp "$STAGING_DIR/repo/CLAUDE.md" "$STAGING_DIR/CLAUDE.md"
+        warn "No external CLAUDE.md found, using one from the repo"
+    else
+        warn "No CLAUDE.md found. Creating a minimal placeholder."
+        cat > "$STAGING_DIR/CLAUDE.md" <<'PLACEHOLDER'
 # CLAUDE.md
 
 You are working in a sandboxed environment with the build output of a project.
 Explore the workspace to understand the project structure before making changes.
 PLACEHOLDER
-fi
+    fi
 
-# ── Copy build output to staging ──────────────────────────────────────────────
-cp -r "$STAGING_DIR/repo/$BUILD_DIR" "$STAGING_DIR/build-output"
+    # ── Copy build output to staging ──────────────────────────────────────────
+    cp -r "$STAGING_DIR/repo/$BUILD_DIR" "$STAGING_DIR/build-output"
 
-# Also grab package.json if it exists (useful context)
-[[ -f "$STAGING_DIR/repo/package.json" ]] && cp "$STAGING_DIR/repo/package.json" "$STAGING_DIR/package.json"
+    # Also grab package.json if it exists (useful context)
+    [[ -f "$STAGING_DIR/repo/package.json" ]] && cp "$STAGING_DIR/repo/package.json" "$STAGING_DIR/package.json"
 
-# ── Copy prompt files to staging ─────────────────────────────────────────────
-cp -r "$SCRIPT_DIR/prompts" "$STAGING_DIR/prompts"
+    # ── Copy prompt files to staging ──────────────────────────────────────────
+    cp -r "$SCRIPT_DIR/prompts" "$STAGING_DIR/prompts"
 
-# ── Generate Dockerfile ──────────────────────────────────────────────────────
-cat > "$STAGING_DIR/Dockerfile" <<DOCKERFILE
+    # ── Generate Dockerfile ───────────────────────────────────────────────────
+    cat > "$STAGING_DIR/Dockerfile" <<DOCKERFILE
 # ─────────────────────────────────────────────────────────────────────────────
 # claude-sandbox-builder: auto-generated Dockerfile
 # Repo: ${REPO_URL}
@@ -202,22 +219,27 @@ USER claude
 CMD ["bash"]
 DOCKERFILE
 
-ok "Dockerfile generated"
+    ok "Dockerfile generated"
 
-# ── Build ─────────────────────────────────────────────────────────────────────
-log "Building Docker image: $IMAGE_TAG ..."
-docker build -t "$IMAGE_TAG" "$STAGING_DIR"
-ok "Image built: $IMAGE_TAG"
+    # ── Build Docker image ────────────────────────────────────────────────────
+    log "Building Docker image: $IMAGE_TAG ..."
+    docker build -t "$IMAGE_TAG" "$STAGING_DIR"
+    ok "Image built: $IMAGE_TAG"
 
-echo ""
-REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
-OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
-DOCS_DIR="$REPO_OUTPUT_DIR/docs"
-if [[ "$FRESH" == true ]] && [[ -d "$REPO_OUTPUT_DIR" ]]; then
-    warn "Removing previous output: $REPO_OUTPUT_DIR"
-    rm -rf "$REPO_OUTPUT_DIR"
+    # ── Persist clone for resume ──────────────────────────────────────────────
+    cp -r "$STAGING_DIR/repo" "$REPO_OUTPUT_DIR/.repo"
+    ok "Repo cached for resume"
 fi
-mkdir -p "$OUTPUT_DIR" "$DOCS_DIR"
+
+# ── Resolve repo path (staging on fresh build, cached on resume) ─────────────
+if [[ -d "$STAGING_DIR/repo" ]]; then
+    REPO_DIR="$STAGING_DIR/repo"
+elif [[ -d "$REPO_OUTPUT_DIR/.repo" ]]; then
+    REPO_DIR="$REPO_OUTPUT_DIR/.repo"
+else
+    REPO_DIR=""
+fi
+
 log "Output: $REPO_OUTPUT_DIR"
 
 CONTAINER_NAME="build-analysis-run-${REPO_NAME,,}"
@@ -319,7 +341,8 @@ fi
 # ── Stage: report (steps 7+8+9) ─────────────────────────────────────────────
 if [[ "$CURRENT_STAGE" == "followed_up" ]]; then
     log "Step 7/9: Copying original source into container ..."
-    docker cp "$STAGING_DIR/repo" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
+    [[ -z "$REPO_DIR" ]] && die "No cached repo found for comparison."
+    docker cp "$REPO_DIR" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
     docker exec "$CONTAINER_NAME" chown -R claude:claude /home/claude/repo_build_files/original_src
     ok "Original source copied"
 
