@@ -97,14 +97,6 @@ stage_image() {
     elif [[ -f "$REPO_DIR/CLAUDE.md" ]]; then
         cp "$REPO_DIR/CLAUDE.md" "$STAGING_DIR/CLAUDE.md"
         warn "No external CLAUDE.md found, using one from the repo"
-    else
-        warn "No CLAUDE.md found. Creating a minimal placeholder."
-        cat > "$STAGING_DIR/CLAUDE.md" <<'PLACEHOLDER'
-# CLAUDE.md
-
-You are working in a sandboxed environment with the build output of a project.
-Explore the workspace to understand the project structure before making changes.
-PLACEHOLDER
     fi
 
     # Copy artifacts to staging

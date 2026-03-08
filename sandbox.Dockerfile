@@ -35,7 +35,7 @@ WORKDIR ${WORKDIR}
 
 # ── Copy build artifacts ─────────────────────────────────────────────────────
 COPY --chown=claude:claude build-output/ ${WORKDIR}/build/
-COPY --chown=claude:claude CLAUDE.md ${WORKDIR}/CLAUDE.md
+COPY --chown=claude:claude CLAUDE.m[d] ${WORKDIR}/
 COPY --chown=claude:claude package.json ${WORKDIR}/package.json
 
 # ── Empty src and docs directories ───────────────────────────────────────────
