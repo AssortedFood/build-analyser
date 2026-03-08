@@ -10,7 +10,7 @@ set -euo pipefail
 #   3. Generates a Dockerfile that bakes the build output + Claude Code CLI
 #      + a custom CLAUDE.md into a fully-featured Debian image
 #   4. Builds the Docker image
-#   5. Runs a 9-step multi-agent analysis pipeline
+#   5. Runs a multi-agent analysis pipeline
 #
 # Usage:
 #   ./main.sh <github-repo-url> [--fresh]
@@ -30,6 +30,7 @@ CLAUDE_MD="$SCRIPT_DIR/prompts/CLAUDE.md"
 BUILD_DIR=""
 NODE_VERSION="20"
 WORKDIR="/home/claude/repo_build_files"
+CLAUDE_MODEL="opus"
 FRESH=false
 
 # ── Parse args ──────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ IMAGE_TAG="build-analysis-${REPO_NAME,,}"
 
 log "Repo:  $REPO_URL"
 log "Tag:   $IMAGE_TAG"
-echo ""
+log ""
 
 REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
 OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
@@ -129,10 +130,14 @@ PLACEHOLDER
 
     # ── Copy artifacts to staging ────────────────────────────────────────────
     cp -r "$STAGING_DIR/repo/$BUILD_DIR" "$STAGING_DIR/build-output"
-    [[ -f "$STAGING_DIR/repo/package.json" ]] && cp "$STAGING_DIR/repo/package.json" "$STAGING_DIR/package.json"
+    if [[ -f "$STAGING_DIR/repo/package.json" ]]; then
+        cp "$STAGING_DIR/repo/package.json" "$STAGING_DIR/package.json"
+    else
+        echo '{}' > "$STAGING_DIR/package.json"
+    fi
     cp -r "$SCRIPT_DIR/prompts" "$STAGING_DIR/prompts"
 
-    generate_dockerfile
+    prepare_docker_context
     build_docker_image
 
     # Persist clone for resume

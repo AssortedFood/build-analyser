@@ -83,4 +83,5 @@ prompts/           Agent prompts (one per step)
 - Docker
 - Git
 - Node.js + npm/pnpm/yarn (for the build step on the host)
+- [gum](https://github.com/charmbracelet/gum) (for terminal UI)
 - Claude Code credentials (`~/.claude` and `~/.claude.json`)

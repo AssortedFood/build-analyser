@@ -40,34 +40,23 @@ detect_build_cmd() {
     fi
 
     # 2. Infer from framework config files (checked in priority order)
-    local configs=(
-        "next.config.js"    "npx next build"
-        "next.config.ts"    "npx next build"
-        "next.config.mjs"   "npx next build"
-        "nuxt.config.js"    "npx nuxt build"
-        "nuxt.config.ts"    "npx nuxt build"
-        "nuxt.config.mjs"   "npx nuxt build"
-        "astro.config.js"   "npx astro build"
-        "astro.config.ts"   "npx astro build"
-        "astro.config.mjs"  "npx astro build"
-        "svelte.config.js"  "npx svelte-kit sync && npx vite build"
-        "angular.json"      "npx ng build"
-        "vite.config.js"    "npx vite build"
-        "vite.config.ts"    "npx vite build"
-        "vite.config.mjs"   "npx vite build"
-        "webpack.config.js" "npx webpack --mode production"
-        "webpack.config.ts" "npx webpack --mode production"
-        "rollup.config.js"  "npx rollup -c"
-        "rollup.config.ts"  "npx rollup -c"
-        "rollup.config.mjs" "npx rollup -c"
-        "tsconfig.json"     "npx tsc"
+    local frameworks=(
+        "next.config.*"    "npx next build"
+        "nuxt.config.*"    "npx nuxt build"
+        "astro.config.*"   "npx astro build"
+        "svelte.config.*"  "npx svelte-kit sync && npx vite build"
+        "angular.json"     "npx ng build"
+        "vite.config.*"    "npx vite build"
+        "webpack.config.*" "npx webpack --mode production"
+        "rollup.config.*"  "npx rollup -c"
+        "tsconfig.json"    "npx tsc"
     )
 
     local i
-    for (( i=0; i<${#configs[@]}; i+=2 )); do
-        if [[ -f "$dir/${configs[$i]}" ]]; then
-            BUILD_CMD="${configs[$i+1]}"
-            warn "No build script in package.json — inferred from ${configs[$i]}"
+    for (( i=0; i<${#frameworks[@]}; i+=2 )); do
+        if compgen -G "$dir/${frameworks[$i]}" > /dev/null; then
+            BUILD_CMD="${frameworks[$i+1]}"
+            warn "No build script in package.json — inferred from ${frameworks[$i]}"
             return
         fi
     done

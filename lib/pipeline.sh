@@ -1,5 +1,62 @@
 #!/usr/bin/env bash
 # lib/pipeline.sh — Stage management and pipeline execution
+#
+# To customise the pipeline, edit the stage functions or reorder the STAGES array.
+# Each stage_* function is self-contained. run_step handles the claude interaction.
+
+# ── Pipeline definition ──────────────────────────────────────────────────────
+# Reorder, comment out, or add stages here.
+STAGES=(plan work review followup report)
+
+# ── Step runner ───────────────────────────────────────────────────────────────
+STEP=0
+
+# run_step <agent> <label> <session-mode> <session-id> <prompt-file>
+#   agent:        planner | worker | reporter
+#   label:        human-readable description
+#   session-mode: session-id (new) | resume (continue)
+#   prompt-file:  filename inside prompts/
+run_step() {
+    local agent="$1" label="$2" mode="$3" session="$4" prompt="$5"
+    ((STEP++))
+    "$agent" "Step $STEP: $label ..."
+    run_claude --"$mode" "$session" -p "$(cat "$SCRIPT_DIR/prompts/$prompt")"
+    ok "$label"
+}
+
+# ── Stage definitions ─────────────────────────────────────────────────────────
+
+stage_plan() {
+    run_step planner "Creating plan"     session-id "$PLANNER_SESSION"  "01-plan.md"
+    run_step planner "Reviewing plan"    resume     "$PLANNER_SESSION"  "02-plan-review.md"
+}
+
+stage_work() {
+    run_step worker "Executing plan"     session-id "$WORKER_SESSION"   "03-worker-execute.md"
+}
+
+stage_review() {
+    run_step planner "Reviewing work"        session-id "$PLANNER_SESSION"  "04-review-work.md"
+    run_step planner "Creating follow-up"    resume     "$PLANNER_SESSION"  "05-followup-plan.md"
+}
+
+stage_followup() {
+    run_step worker "Executing follow-up"    session-id "$WORKER_SESSION"   "06-worker-followup.md"
+}
+
+stage_report() {
+    ((STEP++))
+    log "Step $STEP: Copying original source into container ..."
+    [[ -z "$REPO_DIR" ]] && die "No cached repo found for comparison."
+    docker cp "$REPO_DIR" "$CONTAINER_NAME:$WORKDIR/original_src"
+    docker exec "$CONTAINER_NAME" chown -R claude:claude "$WORKDIR/original_src"
+    ok "Original source copied"
+
+    run_step reporter "Producing mapping"    session-id "$REPORTER_SESSION" "07-reporter-mapping.md"
+    run_step reporter "Producing report"     resume     "$REPORTER_SESSION" "08-reporter-report.md"
+}
+
+# ── Stage detection ───────────────────────────────────────────────────────────
 
 # detect_stage
 # Uses globals: STAGE_FILE
@@ -16,74 +73,22 @@ detect_stage() {
     fi
 }
 
+# ── Pipeline runner ───────────────────────────────────────────────────────────
+
 # run_pipeline
-# Uses globals: CURRENT_STAGE, STAGE_FILE, SCRIPT_DIR, PLANNER_SESSION,
-#               WORKER_SESSION, REPORTER_SESSION, REPO_DIR, CONTAINER_NAME
+# Iterates STAGES, skips completed stages, runs remaining ones.
 run_pipeline() {
-    # ── Stage: plan (steps 1+2) ──────────────────────────────────────────────
-    if [[ "$CURRENT_STAGE" == "start" ]]; then
-        planner "Step 1/9: Creating plan ..."
-        run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/01-plan.md")"
-        ok "Plan created"
+    local started=false
+    [[ "$CURRENT_STAGE" == "start" ]] && started=true
 
-        planner "Step 2/9: Reviewing plan ..."
-        run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/02-plan-review.md")"
-        ok "Plan reviewed"
+    for stage in "${STAGES[@]}"; do
+        if [[ "$started" == true ]]; then
+            "stage_$stage"
+            echo "$stage" > "$STAGE_FILE"
+        elif [[ "$CURRENT_STAGE" == "$stage" ]]; then
+            started=true
+        fi
+    done
 
-        echo "planned" > "$STAGE_FILE"
-        CURRENT_STAGE="planned"
-    fi
-
-    # ── Stage: work (step 3) ─────────────────────────────────────────────────
-    if [[ "$CURRENT_STAGE" == "planned" ]]; then
-        worker "Step 3/9: Executing plan ..."
-        run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/03-worker-execute.md")"
-        ok "Worker finished"
-
-        echo "worked" > "$STAGE_FILE"
-        CURRENT_STAGE="worked"
-    fi
-
-    # ── Stage: review (steps 4+5) ────────────────────────────────────────────
-    if [[ "$CURRENT_STAGE" == "worked" ]]; then
-        planner "Step 4/9: Reviewing work ..."
-        run_claude --session-id "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/04-review-work.md")"
-        ok "Work reviewed"
-
-        planner "Step 5/9: Creating follow-up plan ..."
-        run_claude --resume "$PLANNER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/05-followup-plan.md")"
-        ok "Follow-up plan created"
-
-        echo "reviewed" > "$STAGE_FILE"
-        CURRENT_STAGE="reviewed"
-    fi
-
-    # ── Stage: followup (step 6) ─────────────────────────────────────────────
-    if [[ "$CURRENT_STAGE" == "reviewed" ]]; then
-        worker "Step 6/9: Executing follow-up ..."
-        run_claude --session-id "$WORKER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/06-worker-followup.md")"
-        ok "Worker follow-up finished"
-
-        echo "followed_up" > "$STAGE_FILE"
-        CURRENT_STAGE="followed_up"
-    fi
-
-    # ── Stage: report (steps 7+8+9) ──────────────────────────────────────────
-    if [[ "$CURRENT_STAGE" == "followed_up" ]]; then
-        log "Step 7/9: Copying original source into container ..."
-        [[ -z "$REPO_DIR" ]] && die "No cached repo found for comparison."
-        docker cp "$REPO_DIR" "$CONTAINER_NAME:/home/claude/repo_build_files/original_src"
-        docker exec "$CONTAINER_NAME" chown -R claude:claude /home/claude/repo_build_files/original_src
-        ok "Original source copied"
-
-        reporter "Step 8/9: Producing mapping ..."
-        run_claude --session-id "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/07-reporter-mapping.md")"
-        ok "Mapping complete"
-
-        reporter "Step 9/9: Producing report ..."
-        run_claude --resume "$REPORTER_SESSION" -p "$(cat "$SCRIPT_DIR/prompts/08-reporter-report.md")"
-        ok "Report complete"
-
-        echo "complete" > "$STAGE_FILE"
-    fi
+    echo "complete" > "$STAGE_FILE"
 }
