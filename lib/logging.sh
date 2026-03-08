@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # lib/logging.sh — Logging via gum, agent helpers, banner
 
-command -v gum > /dev/null 2>&1 || {
-    echo "Error: gum is required but not installed." >&2
-    echo "Install: https://github.com/charmbracelet/gum#installation" >&2
-    exit 1
-}
+for _cmd in gum glow; do
+    command -v "$_cmd" > /dev/null 2>&1 || {
+        echo "Error: $_cmd is required but not installed." >&2
+        echo "Install: https://github.com/charmbracelet/$_cmd#installation" >&2
+        exit 1
+    }
+done
 
 # ── Timestamp style ───────────────────────────────────────────────────────────
 # Time-only (HH:MM:SS) with a dark background badge and padding.
@@ -67,25 +69,27 @@ ts_badge() {
 }
 
 # stamp_stream
-# Reads streaming LLM output, detects message boundaries via U+200B markers,
-# and prepends a timestamp badge to the first line of each message.
+# Buffers each LLM message (delimited by U+200B markers), renders it through
+# glow for styled markdown, and prepends a timestamp badge.
 stamp_stream() {
-    local new_msg=false
     local zwsp=$'\xe2\x80\x8b'  # UTF-8 for U+200B
+    local buf=""
+
+    _flush() {
+        [[ -z "$buf" ]] && return
+        printf '\n%s\n' "$(ts_badge)"
+        printf '%s' "$buf" | glow -
+        buf=""
+    }
 
     while IFS= read -r line; do
         if [[ "$line" == "$zwsp" ]]; then
-            new_msg=true
-            echo ""
-        elif [[ "$new_msg" == true ]] && [[ -z "$line" ]]; then
-            continue
-        elif [[ "$new_msg" == true ]]; then
-            printf '%s %s\n' "$(ts_badge)" "$line"
-            new_msg=false
+            _flush
         else
-            echo "$line"
+            buf+="$line"$'\n'
         fi
     done
+    _flush
 }
 
 # ── Completion banner ─────────────────────────────────────────────────────────

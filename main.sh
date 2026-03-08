@@ -62,7 +62,7 @@ log "Tag:   $IMAGE_TAG"
 REPO_OUTPUT_DIR="$SCRIPT_DIR/output/${REPO_NAME,,}"
 OUTPUT_DIR="$REPO_OUTPUT_DIR/src"
 DOCS_DIR="$REPO_OUTPUT_DIR/docs"
-STAGE_FILE="$DOCS_DIR/.stage"
+STAGE_FILE="$REPO_OUTPUT_DIR/.stage"
 
 if [[ "$FRESH" == true ]] && [[ -d "$REPO_OUTPUT_DIR" ]]; then
     warn "Removing previous output: $REPO_OUTPUT_DIR"
