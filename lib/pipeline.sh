@@ -6,19 +6,10 @@
 
 # ── Pipeline definition ──────────────────────────────────────────────────────
 # Reorder, comment out, or add stages here.
-STAGES=(clone install build image plan work review followup report)
+STAGES=(clone install build strip image plan work review followup report)
 
 # ── Step counter ─────────────────────────────────────────────────────────────
 STEP=0
-
-# Step count per stage (for correct numbering on resume).
-stage_steps() {
-    case "$1" in
-        plan|review)  echo 2 ;;   # 2 run_steps
-        report)       echo 3 ;;   # 1 docker-cp + 2 run_steps
-        *)            echo 1 ;;   # clone, install, build, image, work, followup
-    esac
-}
 
 # ── Step runner ───────────────────────────────────────────────────────────────
 
@@ -81,6 +72,14 @@ stage_build() {
     log "Running: $BUILD_CMD"
     ( cd "$REPO_DIR" && eval "$BUILD_CMD" )
     ok "Build complete"
+}
+
+stage_strip() {
+    STEP=$((STEP + 1))
+    step_header 75 "Step $STEP · strip · Removing source maps"
+
+    strip_sourcemaps "$REPO_DIR"
+    ok "Source maps stripped"
 }
 
 stage_image() {
@@ -158,12 +157,15 @@ stage_report() {
 detect_stage() {
     CURRENT_STAGE="start"
     if [[ -f "$STAGE_FILE" ]]; then
-        CURRENT_STAGE=$(cat "$STAGE_FILE")
+        local saved
+        saved=$(cat "$STAGE_FILE")
+        CURRENT_STAGE="${saved%%:*}"
+        STEP="${saved##*:}"
         if [[ "$CURRENT_STAGE" == "complete" ]]; then
             ok "Pipeline already complete. Delete $STAGE_FILE to re-run."
             exit 0
         fi
-        log "Resuming from stage: $CURRENT_STAGE"
+        log "Resuming from stage: $CURRENT_STAGE (step $STEP)"
     fi
 }
 
@@ -180,14 +182,11 @@ run_pipeline() {
     for stage in "${STAGES[@]}"; do
         if [[ "$started" == true ]]; then
             "stage_$stage"
-            echo "$stage" > "$STAGE_FILE"
+            echo "$stage:$STEP" > "$STAGE_FILE"
         elif [[ "$CURRENT_STAGE" == "$stage" ]]; then
-            STEP=$((STEP + $(stage_steps "$stage")))
             started=true
-        else
-            STEP=$((STEP + $(stage_steps "$stage")))
         fi
     done
 
-    echo "complete" > "$STAGE_FILE"
+    echo "complete:$STEP" > "$STAGE_FILE"
 }

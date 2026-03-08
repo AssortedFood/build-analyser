@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/logging.sh"
 source "$SCRIPT_DIR/lib/detect.sh"
 source "$SCRIPT_DIR/lib/docker.sh"
+source "$SCRIPT_DIR/lib/strip-sourcemaps.sh"
 source "$SCRIPT_DIR/lib/pipeline.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────

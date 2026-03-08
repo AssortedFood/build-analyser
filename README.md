@@ -18,16 +18,17 @@ Clones a GitHub repo, builds it, and runs a multi-agent Claude Code pipeline tha
 | 1 | clone | Clones the repo (shallow) |
 | 2 | install | Detects package manager, installs dependencies |
 | 3 | build | Detects and runs the build command |
-| 4 | image | Creates Docker image with build output + Claude Code |
-| 5 | plan | Planner analyses build output, creates `docs/PLAN.md` |
-| 6 | plan | Planner sense-checks and fixes the plan |
-| 7 | work | Worker executes the plan, reconstructs source into `src/` |
-| 8 | review | Planner reviews worker's output, scores it /10 |
-| 9 | review | Planner produces `docs/FOLLOWUP.md` for remaining work |
-| 10 | followup | Worker executes the follow-up plan |
-| 11 | report | Copies original repo into container as `original_src/` |
-| 12 | report | Reporter compares `src/` vs `original_src/`, writes `docs/MAPPING.md` |
-| 13 | report | Reporter writes `docs/REPORT.md` with improvement recommendations |
+| 4 | strip | Removes source maps from build output |
+| 5 | image | Creates Docker image with build output + Claude Code |
+| 6 | plan | Planner analyses build output, creates `docs/PLAN.md` |
+| 7 | plan | Planner sense-checks and fixes the plan |
+| 8 | work | Worker executes the plan, reconstructs source into `src/` |
+| 9 | review | Planner reviews worker's output, scores it /10 |
+| 10 | review | Planner produces `docs/FOLLOWUP.md` for remaining work |
+| 11 | followup | Worker executes the follow-up plan |
+| 12 | report | Copies original repo into container as `original_src/` |
+| 13 | report | Reporter compares `src/` vs `original_src/`, writes `docs/MAPPING.md` |
+| 14 | report | Reporter writes `docs/REPORT.md` with improvement recommendations |
 
 Agents run with **high thinking effort**. Model is configurable via `CLAUDE_MODEL` in `main.sh` (default: `opus`).
 
@@ -68,8 +69,9 @@ sandbox.Dockerfile   Docker image definition (Debian + Node + Claude Code)
 lib/
 ├── logging.sh       Logging via gum, agent helpers, banner
 ├── detect.sh        Package manager, build command, and output directory detection
-├── docker.sh        Image build, container lifecycle, run_claude helper
-└── pipeline.sh      Modular stage definitions and pipeline runner
+├── docker.sh             Image build, container lifecycle, run_claude helper
+├── strip-sourcemaps.sh   Remove .map files, inline maps, and sourceMappingURL comments
+└── pipeline.sh           Modular stage definitions and pipeline runner
 prompts/             Agent prompts (one per step)
 ```
 
