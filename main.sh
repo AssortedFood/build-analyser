@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'err "Failed at line $LINENO (exit code $?)"' ERR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # claude-sandbox-builder

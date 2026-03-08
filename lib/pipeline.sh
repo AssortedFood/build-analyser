@@ -8,8 +8,19 @@
 # Reorder, comment out, or add stages here.
 STAGES=(clone install build image plan work review followup report)
 
-# ── Step runner ───────────────────────────────────────────────────────────────
+# ── Step counter ─────────────────────────────────────────────────────────────
 STEP=0
+
+# Step count per stage (for correct numbering on resume).
+stage_steps() {
+    case "$1" in
+        plan|review)  echo 2 ;;   # 2 run_steps
+        report)       echo 3 ;;   # 1 docker-cp + 2 run_steps
+        *)            echo 1 ;;   # clone, install, build, image, work, followup
+    esac
+}
+
+# ── Step runner ───────────────────────────────────────────────────────────────
 
 # run_step <agent> <label> <session-mode> <session-id> <prompt-file>
 #   agent:        planner | worker | reporter
@@ -179,7 +190,10 @@ run_pipeline() {
             "stage_$stage"
             echo "$stage" > "$STAGE_FILE"
         elif [[ "$CURRENT_STAGE" == "$stage" ]]; then
+            STEP=$((STEP + $(stage_steps "$stage")))
             started=true
+        else
+            STEP=$((STEP + $(stage_steps "$stage")))
         fi
     done
 
