@@ -55,7 +55,7 @@ ensure_container() {
 run_claude() {
     docker exec -t "$CONTAINER_NAME" $CLAUDE --verbose --output-format stream-json "$@" \
         | grep --line-buffered '^\{' \
-        | jq --unbuffered -rj 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | "\n" + .text'
+        | jq --unbuffered -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | "\u200B\n" + .text'
     echo ""
 }
 

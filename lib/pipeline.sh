@@ -18,9 +18,15 @@ STEP=0
 #   prompt-file:  filename inside prompts/
 run_step() {
     local agent="$1" label="$2" mode="$3" session="$4" prompt="$5"
+    local color
+    color=$(agent_color "$agent")
+
     STEP=$((STEP + 1))
-    "$agent" "Step $STEP: $label ..."
-    run_claude --"$mode" "$session" -p "$(cat "$SCRIPT_DIR/prompts/$prompt")"
+    step_header "$color" "Step $STEP · $agent · $label"
+
+    run_claude --"$mode" "$session" -p "$(cat "$SCRIPT_DIR/prompts/$prompt")" \
+        | tint_stream "$color"
+
     ok "$label"
 }
 
@@ -119,7 +125,7 @@ stage_report() {
     ensure_container
 
     STEP=$((STEP + 1))
-    log "Step $STEP: Copying original source into container ..."
+    step_header "$(agent_color reporter)" "Step $STEP · Copying original source into container"
     [[ ! -d "$REPO_DIR" ]] && die "No cached repo found for comparison."
     docker cp "$REPO_DIR" "$CONTAINER_NAME:$WORKDIR/original_src"
     docker exec "$CONTAINER_NAME" chown -R claude:claude "$WORKDIR/original_src"
