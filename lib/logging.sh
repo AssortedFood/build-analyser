@@ -57,19 +57,19 @@ step_header() {
         "$label"
 }
 
-# ── LLM output timestamp ─────────────────────────────────────────────────────
-# Stamps each new message from the LLM. New messages start after a blank line
-# (the jq filter emits \n before each text block).
+# ── LLM output stream ────────────────────────────────────────────────────────
+# Prepends a timestamp badge to the first line of each new LLM message.
+# New messages are delimited by a zero-width space line (U+200B) emitted
+# by the jq filter in run_claude.
 
 ts_badge() {
     printf '\033[48;5;%dm\033[38;5;%dm %s \033[0m' "$TS_BG" "$TS_FG" "$(date +%H:%M:%S)"
 }
 
-# tint_stream <256-color>
-# Tints every line and prepends a timestamp badge on the first line of each
-# new message. New messages are marked by a zero-width space line (U+200B)
-# emitted by the jq filter in run_claude.
-tint_stream() {
+# stamp_stream
+# Reads streaming LLM output, detects message boundaries via U+200B markers,
+# and prepends a timestamp badge to the first line of each message.
+stamp_stream() {
     local new_msg=false
     local zwsp=$'\xe2\x80\x8b'  # UTF-8 for U+200B
 

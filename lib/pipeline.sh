@@ -25,7 +25,7 @@ run_step() {
     step_header "$color" "Step $STEP · $agent · $label"
 
     run_claude --"$mode" "$session" -p "$(cat "$SCRIPT_DIR/prompts/$prompt")" \
-        | tint_stream "$color"
+        | stamp_stream
 
     ok "$label"
 }
@@ -34,6 +34,9 @@ run_step() {
 # REPO_DIR is set lazily — $REPO_OUTPUT_DIR isn't available at source time.
 
 stage_clone() {
+    STEP=$((STEP + 1))
+    step_header 75 "Step $STEP · clone · Cloning repository"
+
     [[ -d "$REPO_DIR" ]] && rm -rf "$REPO_DIR"
     log "Cloning $REPO_URL ..."
     git clone --depth 1 "$REPO_URL" "$REPO_DIR"
@@ -41,6 +44,9 @@ stage_clone() {
 }
 
 stage_install() {
+    STEP=$((STEP + 1))
+    step_header 75 "Step $STEP · install · Installing dependencies"
+
     detect_package_manager "$REPO_DIR"
 
     log "Running: $PM_INSTALL"
@@ -56,6 +62,9 @@ stage_install() {
 }
 
 stage_build() {
+    STEP=$((STEP + 1))
+    step_header 75 "Step $STEP · build · Building project"
+
     detect_build_cmd "$REPO_DIR"
 
     log "Running: $BUILD_CMD"
@@ -64,6 +73,9 @@ stage_build() {
 }
 
 stage_image() {
+    STEP=$((STEP + 1))
+    step_header 75 "Step $STEP · image · Creating Docker image"
+
     detect_build_output "$REPO_DIR"
     ok "Build output: $BUILD_DIR"
 
@@ -112,7 +124,7 @@ stage_work() {
 
 stage_review() {
     ensure_container
-    run_step planner "Reviewing work"        session-id "$PLANNER_SESSION"  "04-review-work.md"
+    run_step planner "Reviewing work"        resume     "$PLANNER_SESSION"  "04-review-work.md"
     run_step planner "Creating follow-up"    resume     "$PLANNER_SESSION"  "05-followup-plan.md"
 }
 
@@ -125,7 +137,7 @@ stage_report() {
     ensure_container
 
     STEP=$((STEP + 1))
-    step_header "$(agent_color reporter)" "Step $STEP · Copying original source into container"
+    step_header "$(agent_color reporter)" "Step $STEP · report · Copying original source"
     [[ ! -d "$REPO_DIR" ]] && die "No cached repo found for comparison."
     docker cp "$REPO_DIR" "$CONTAINER_NAME:$WORKDIR/original_src"
     docker exec "$CONTAINER_NAME" chown -R claude:claude "$WORKDIR/original_src"
